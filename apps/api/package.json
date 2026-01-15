@@ -1,0 +1,24 @@
+{
+  "name": "@payservice/api",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.28.0",
+  "dependencies": {
+    "@fastify/formbody": "^8.0.2",
+    "dotenv": "^17.2.3",
+    "fastify": "^5.6.2",
+    "twilio": "^5.11.2",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.8",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

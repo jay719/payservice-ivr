@@ -1,0 +1,27 @@
+# === Environment ===
+.env*
+
+# === Node / pnpm ===
+node_modules/
+.pnpm-store/
+
+# === Build output ===
+dist/
+build/
+
+# === Logs ===
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# === OS / Editor ===
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+
+# === Runtime artifacts ===
+*.pid
+*.seed
+*.tsbuildinfo
