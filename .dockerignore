@@ -1,0 +1,56 @@
+# flyctl launch added from .gitignore
+# env
+**/.env
+**/.env*
+
+# dependencies
+**/node_modules
+**/.pnpm-store
+
+# builds
+**/dist
+**/build
+
+# logs
+**/*.log
+
+# editor/os
+**/.vscode
+**/.DS_Store
+**/Thumbs.db
+
+# db files (if we add sqlite)
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+
+
+# flyctl launch added from apps/api/.gitignore
+# === Environment ===
+apps/api/**/.env*
+
+# === Node / pnpm ===
+apps/api/**/node_modules
+apps/api/**/.pnpm-store
+
+# === Build output ===
+apps/api/**/dist
+apps/api/**/build
+
+# === Logs ===
+apps/api/**/logs
+apps/api/**/*.log
+apps/api/**/npm-debug.log*
+apps/api/**/pnpm-debug.log*
+
+# === OS / Editor ===
+apps/api/**/.DS_Store
+apps/api/**/Thumbs.db
+apps/api/**/.vscode/*
+!apps/api/**/.vscode/extensions.json
+
+# === Runtime artifacts ===
+apps/api/**/*.pid
+apps/api/**/*.seed
+apps/api/**/*.tsbuildinfo
+fly.toml

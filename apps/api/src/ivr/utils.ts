@@ -22,3 +22,8 @@ export function getCallSid(body: TwilioVoiceWebhookBody | undefined): string {
 export function getDigits(body: TwilioVoiceWebhookBody | undefined): unknown {
   return body?.Digits;
 }
+
+export function getCaller(body: TwilioVoiceWebhookBody | undefined): string {
+  const from = body?.From;
+  return typeof from === "string" && from.length > 0 ? from : "unknown";
+}
