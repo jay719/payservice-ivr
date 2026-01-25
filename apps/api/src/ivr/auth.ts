@@ -6,8 +6,7 @@ import {
   getDigits,
   getCaller,
   isDigits,
-  urlJoin,
-  type TwilioVoiceWebhookBody,
+  urlJoin,  type TwilioVoiceWebhookBody,
 } from "./utils";
 import { getAccount, verifyPin } from "./accounts";
 import { setAuthed } from "./authState";
@@ -49,14 +48,14 @@ export function ivrAuth(req: TwilioReq, reply: FastifyReply) {
     return sendXml(reply, vr);
   }
 
-  if (digitsRaw.length !== 4) {
-    vr.say("Your P I N must be 4 digits.");
+  if (digitsRaw.length !== 3) {
+    vr.say("Your PIN must be 3 digits.");
     vr.pause({ length: 1 });
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
     return sendXml(reply, vr);
   }
   // DEMO OVERRIDE PIN
-if (digitsRaw === "2222") {
+if (digitsRaw === "222") {
   setAuthed(callSid, caller);
   vr.say("Demo access granted.");
   vr.pause({ length: 1 });
@@ -69,7 +68,7 @@ if (digitsRaw === "2222") {
   if (!acct) {
     vr.say(
       "No account was found for this phone number. " +
-        "Press the pound key to create a new account."
+        "To create a new account, press the pound key without entering a PIN."
     );
     vr.pause({ length: 1 });
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
@@ -77,7 +76,7 @@ if (digitsRaw === "2222") {
   }
 
   if (!verifyPin(caller, digitsRaw)) {
-    vr.say("Invalid P I N. Please try again.");
+    vr.say("Invalid PIN. Please try again.");
     vr.pause({ length: 1 });
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
     return sendXml(reply, vr);

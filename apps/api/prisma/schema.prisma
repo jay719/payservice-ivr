@@ -1,0 +1,21 @@
+datasource db {
+  provider = "postgresql"
+
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Account {
+  id               String   @id @default(uuid())
+  callerPhone      String   @unique
+  inmateId         String
+  pinHash          String
+  confirmationCode String
+  isConfirmed      Boolean  @default(false)
+  email            String?
+  stripeCustomerId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
