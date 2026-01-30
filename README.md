@@ -556,7 +556,6 @@ This list exists to avoid confusion:
 
 ❌ Postgres database
 
-❌ Prisma
 
 ❌ Stripe
 
@@ -592,7 +591,7 @@ This will be the next step, not yet done:
 
 Fly.io Postgres
 
-Prisma schema + migrations
+
 
 Argon2id for PIN hashing
 
