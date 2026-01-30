@@ -32,7 +32,7 @@ function requireAuthed(
 ): boolean {
   const callSid = getCallSid(req.body);
   if (!isAuthed(callSid)) {
-    vr.say("Please enter your P I N first.");
+    vr.say("Please enter your PINfirst.");
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
     sendXml(reply, vr);
     return false;

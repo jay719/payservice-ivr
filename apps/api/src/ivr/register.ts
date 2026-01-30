@@ -80,7 +80,7 @@ export function ivrRegisterId(req: TwilioReq, reply: FastifyReply) {
     timeout: 12,
   });
 
-  gather.say("Create a 4 digit P I N now.");
+  gather.say("Create a 4 digit PINnow.");
 
   vr.say("No input received.");
   vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
@@ -102,7 +102,7 @@ export function ivrRegisterPin(req: TwilioReq, reply: FastifyReply) {
   }
 
   if (!isDigits(digitsRaw) || digitsRaw.length !== 4) {
-    vr.say("That P I N is not valid. Please try again.");
+    vr.say("That PINis not valid. Please try again.");
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/register"));
     return sendXml(reply, vr);
   }
@@ -120,7 +120,7 @@ export function ivrRegisterPin(req: TwilioReq, reply: FastifyReply) {
     timeout: 12,
   });
 
-  gather.say("Re enter your 4 digit P I N to confirm.");
+  gather.say("Re enter your 4 digit PINto confirm.");
 
   vr.say("No input received.");
   vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
@@ -142,14 +142,14 @@ export function ivrRegisterPinConfirm(req: TwilioReq, reply: FastifyReply) {
   }
 
   if (!isDigits(digitsRaw) || digitsRaw.length !== 4) {
-    vr.say("That confirmation P I N is not valid.");
+    vr.say("That confirmation PINis not valid.");
     clearState(callSid);
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
     return sendXml(reply, vr);
   }
 
   if (digitsRaw !== state.pin) {
-    vr.say("Those P I N numbers did not match. Please try again.");
+    vr.say("Those PINnumbers did not match. Please try again.");
     clearState(callSid);
     vr.pause({ length: 1 });
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/register"));
