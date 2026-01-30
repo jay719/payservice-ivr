@@ -20,17 +20,17 @@ export function ivrEntry(req: TwilioReq, reply: FastifyReply) {
   const baseUrl = getBaseUrl();
 
   const gather = vr.gather({
-    numDigits: 3,
+    numDigits: 4,
     finishOnKey: "#",
     actionOnEmptyResult: true,
     action: urlJoin(baseUrl, "/twilio/auth"),
     method: "POST",
     timeout: 10,
-    });
+  });
 
   gather.say(
     "Welcome to your Rich Fit MyiBot. " +
-      "Please enter your 3 digit PIN now. " +
+      "Please enter your 4 digit PIN now. " +
       "Or press the pound key to create a new account."
   );
 
