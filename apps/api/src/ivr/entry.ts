@@ -26,7 +26,7 @@ export function ivrEntry(req: TwilioReq, reply: FastifyReply) {
     action: urlJoin(baseUrl, "/twilio/auth"),
     method: "POST",
     timeout: 10,
-    });
+  });
 
   gather.say(
     "Welcome to your Rich Fit MyiBot. " +

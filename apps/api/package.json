@@ -12,8 +12,11 @@
   "packageManager": "pnpm@10.28.0",
   "dependencies": {
     "@fastify/formbody": "^8.0.2",
+    "@prisma/client": "^7.3.0",
+    "argon2": "^0.44.0",
     "dotenv": "^17.2.3",
     "fastify": "^5.6.2",
+    "prisma": "^7.3.0",
     "twilio": "^5.11.2",
     "zod": "^4.3.5"
   },

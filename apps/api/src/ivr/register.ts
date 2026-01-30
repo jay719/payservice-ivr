@@ -1,4 +1,3 @@
-// apps/api/src/ivr/register.ts
 import twilio from "twilio";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { clearState, getState, setState } from "./state";
@@ -81,7 +80,7 @@ export function ivrRegisterId(req: TwilioReq, reply: FastifyReply) {
     timeout: 12,
   });
 
-  gather.say("Create a 3 digit PIN now.");
+  gather.say("Create a 4 digit P I N now.");
 
   vr.say("No input received.");
   vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
@@ -102,8 +101,8 @@ export function ivrRegisterPin(req: TwilioReq, reply: FastifyReply) {
     return sendXml(reply, vr);
   }
 
-  if (!isDigits(digitsRaw) || digitsRaw.length !== 3) {
-    vr.say("That PIN is not valid. Please try again.");
+  if (!isDigits(digitsRaw) || digitsRaw.length !== 4) {
+    vr.say("That P I N is not valid. Please try again.");
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/register"));
     return sendXml(reply, vr);
   }
@@ -121,7 +120,7 @@ export function ivrRegisterPin(req: TwilioReq, reply: FastifyReply) {
     timeout: 12,
   });
 
-  gather.say("Re enter your 3 digit PIN to confirm.");
+  gather.say("Re enter your 4 digit P I N to confirm.");
 
   vr.say("No input received.");
   vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
@@ -142,8 +141,8 @@ export function ivrRegisterPinConfirm(req: TwilioReq, reply: FastifyReply) {
     return sendXml(reply, vr);
   }
 
-  if (!isDigits(digitsRaw) || digitsRaw.length !== 3) {
-    vr.say("That confirmation PIN is not valid.");
+  if (!isDigits(digitsRaw) || digitsRaw.length !== 4) {
+    vr.say("That confirmation P I N is not valid.");
     clearState(callSid);
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
     return sendXml(reply, vr);
@@ -164,7 +163,6 @@ export function ivrRegisterPinConfirm(req: TwilioReq, reply: FastifyReply) {
     pin: state.pin,
   });
 
-  // Auto-auth so they can continue without re-entering PIN right after signup
   setAuthed(callSid, caller);
 
   vr.say("Your account is created.");
@@ -174,7 +172,6 @@ export function ivrRegisterPinConfirm(req: TwilioReq, reply: FastifyReply) {
   vr.say("Your confirmation code is.");
   sayDigitsSlow(vr, acct.confirmationCode);
 
-  // Store code in state so we can repeat it
   setState(callSid, {
     step: "register_code_menu",
     confirmationCode: acct.confirmationCode,
@@ -191,61 +188,6 @@ export function ivrRegisterPinConfirm(req: TwilioReq, reply: FastifyReply) {
 
   gather.say("Press 1 to repeat the confirmation code. Press 9 for the main menu.");
 
-  vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
-  return sendXml(reply, vr);
-}
-
-export function ivrRegisterCodeMenu(req: TwilioReq, reply: FastifyReply) {
-  const vr = new VoiceResponse();
-  const baseUrl = getBaseUrl();
-
-  const callSid = getCallSid(req.body);
-  const state = getState(callSid);
-
-  if (!state || state.step !== "register_code_menu") {
-    vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
-    return sendXml(reply, vr);
-  }
-
-  const gather = vr.gather({
-    numDigits: 1,
-    action: urlJoin(baseUrl, "/twilio/register/code/input"),
-    method: "POST",
-    timeout: 8,
-  });
-
-  gather.say("Press 1 to repeat the confirmation code. Press 9 for the main menu.");
-
-  vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
-  return sendXml(reply, vr);
-}
-
-export function ivrRegisterCodeInput(req: TwilioReq, reply: FastifyReply) {
-  const vr = new VoiceResponse();
-  const baseUrl = getBaseUrl();
-
-  const callSid = getCallSid(req.body);
-  const digitsRaw = getDigits(req.body);
-  const digits = isDigits(digitsRaw) ? digitsRaw : "";
-  const state = getState(callSid);
-
-  if (!state || state.step !== "register_code_menu") {
-    vr.say("Session expired.");
-    clearState(callSid);
-    vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
-    return sendXml(reply, vr);
-  }
-
-  if (digits === "1") {
-    vr.say("Your confirmation code is.");
-    sayDigitsSlow(vr, state.confirmationCode);
-    vr.pause({ length: 1 });
-    vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/register/code/menu"));
-    return sendXml(reply, vr);
-  }
-
-  // 9 or anything else goes to main menu
-  clearState(callSid);
   vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
   return sendXml(reply, vr);
 }

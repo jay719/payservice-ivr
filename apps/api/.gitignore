@@ -25,3 +25,5 @@ Thumbs.db
 *.pid
 *.seed
 *.tsbuildinfo
+
+/src/generated/prisma
