@@ -1,28 +1,23 @@
-// apps/api/src/ivr/state.ts
+import { query } from "../db"
 
-export type TransferState =
-  | { step: "transfer_amount" }
-  | { step: "transfer_recipient"; amountCents: number }
-  | { step: "transfer_confirm"; amountCents: number; recipientCode: string };
-
-export type RegisterState =
-  | { step: "register_id" }
-  | { step: "register_pin"; memberId: string }
-  | { step: "register_pin_confirm"; memberId: string; pin: string }
-  | { step: "register_code_menu"; confirmationCode: string };
-
-export type CallState = TransferState | RegisterState;
-
-const state = new Map<string, CallState>(); // key: CallSid
-
-export function getState(callSid: string): CallState | undefined {
-  return state.get(callSid);
+export async function getState(callSid: string) {
+  const rows = await query<{ state: any }>(
+    "SELECT state FROM call_sessions WHERE call_sid = $1",
+    [callSid]
+  )
+  return rows[0]?.state ?? null
 }
 
-export function setState(callSid: string, s: CallState): void {
-  state.set(callSid, s);
+export async function setState(callSid: string, state: any) {
+  await query(
+    `INSERT INTO call_sessions (call_sid, state)
+     VALUES ($1, $2)
+     ON CONFLICT (call_sid)
+     DO UPDATE SET state = EXCLUDED.state, updated_at = NOW()`,
+    [callSid, state]
+  )
 }
 
-export function clearState(callSid: string): void {
-  state.delete(callSid);
+export async function clearState(callSid: string) {
+  await query("DELETE FROM call_sessions WHERE call_sid = $1", [callSid])
 }
