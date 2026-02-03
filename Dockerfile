@@ -1,41 +1,42 @@
-# ---------- build stage ----------
-FROM node:20-slim AS build
+# ---------- Build stage ----------
+FROM node:20-alpine AS builder
+
 WORKDIR /app
 
 # Enable pnpm
-RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
+RUN corepack enable
 
-# Copy workspace files
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/api/package.json apps/api/package.json
+# Copy only what is needed for install first (better caching)
+COPY pnpm-lock.yaml package.json pnpm-workspace.yaml ./
+COPY apps/api/package.json ./apps/api/
 
-# Install deps (workspace-aware)
 RUN pnpm install --frozen-lockfile
 
-# Copy source
-COPY apps/api apps/api
+# Now copy source
+COPY . .
 
-# Build API
-RUN pnpm --filter api build
+# Build the API
+RUN pnpm --filter @payservice/api build
 
+# ---------- Runtime stage ----------
+FROM node:20-alpine
 
-# ---------- runtime stage ----------
-FROM node:20-slim AS run
-WORKDIR /app
 ENV NODE_ENV=production
+RUN corepack enable
 
-RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
+WORKDIR /app
 
-# Copy workspace files
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/api/package.json apps/api/package.json
+# Copy the API package.json and lock/workspace files
+COPY pnpm-lock.yaml package.json pnpm-workspace.yaml ./
+COPY apps/api/package.json ./apps/api/package.json
 
-# Install production deps only
-RUN pnpm install --prod --frozen-lockfile
+# Install ONLY the API's prod deps
+RUN pnpm --filter @payservice/api install --prod --frozen-lockfile
 
-# Copy compiled output
-COPY --from=build /app/apps/api/dist apps/api/dist
+# Copy the built dist into the SAME package folder
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
 
+# Run from inside the package so Node resolves ./node_modules correctly
+WORKDIR /app/apps/api
 EXPOSE 3001
-
-CMD ["pnpm", "--filter", "api", "start"]
+CMD ["node", "dist/index.js"]
