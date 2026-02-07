@@ -1,4 +1,3 @@
-// apps/api/src/ivr/register.ts
 import twilio from "twilio";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { clearState, getState, setState } from "./state";
@@ -30,12 +29,12 @@ function sayDigitsSlow(vr: twilio.twiml.VoiceResponse, digits: string) {
   vr.say(digits.split("").join(" "));
 }
 
-export function ivrRegisterStart(req: TwilioReq, reply: FastifyReply) {
+export async function ivrRegisterStart(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
   const callSid = getCallSid(req.body);
-  setState(callSid, { step: "register_id" });
+  await setState(callSid, { step: "register_id" });
 
   const gather = vr.gather({
     numDigits: 8,
@@ -51,12 +50,12 @@ export function ivrRegisterStart(req: TwilioReq, reply: FastifyReply) {
   return sendXml(reply, vr);
 }
 
-export function ivrRegisterId(req: TwilioReq, reply: FastifyReply) {
+export async function ivrRegisterId(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
   const callSid = getCallSid(req.body);
-  const state = getState(callSid);
+  const state = await getState(callSid);
   const digitsRaw = getDigits(req.body);
 
   if (!state || state.step !== "register_id") {
@@ -72,28 +71,28 @@ export function ivrRegisterId(req: TwilioReq, reply: FastifyReply) {
   }
 
   const memberId = digitsRaw;
-  setState(callSid, { step: "register_pin", memberId });
+  await setState(callSid, { step: "register_pin", memberId });
 
   const gather = vr.gather({
-    numDigits: 4,
+    numDigits: 3,
     action: urlJoin(baseUrl, "/twilio/register/pin"),
     method: "POST",
     timeout: 12,
   });
 
-  gather.say("Create a 4 digit PIN now.");
+  gather.say("Create a 3 digit PIN now.");
 
   vr.say("No input received.");
   vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
   return sendXml(reply, vr);
 }
 
-export function ivrRegisterPin(req: TwilioReq, reply: FastifyReply) {
+export async function ivrRegisterPin(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
   const callSid = getCallSid(req.body);
-  const state = getState(callSid);
+  const state = await getState(callSid);
   const digitsRaw = getDigits(req.body);
 
   if (!state || state.step !== "register_pin") {
@@ -102,38 +101,38 @@ export function ivrRegisterPin(req: TwilioReq, reply: FastifyReply) {
     return sendXml(reply, vr);
   }
 
-  if (!isDigits(digitsRaw) || digitsRaw.length !== 4) {
+  if (!isDigits(digitsRaw) || digitsRaw.length !== 3) {
     vr.say("That PIN is not valid. Please try again.");
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/register"));
     return sendXml(reply, vr);
   }
 
-  setState(callSid, {
+  await setState(callSid, {
     step: "register_pin_confirm",
     memberId: state.memberId,
     pin: digitsRaw,
   });
 
   const gather = vr.gather({
-    numDigits: 4,
+    numDigits: 3,
     action: urlJoin(baseUrl, "/twilio/register/pin/confirm"),
     method: "POST",
     timeout: 12,
   });
 
-  gather.say("Re enter your 4 digit PIN to confirm.");
+  gather.say("Re enter your 3 digit PIN to confirm.");
 
   vr.say("No input received.");
   vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
   return sendXml(reply, vr);
 }
 
-export function ivrRegisterPinConfirm(req: TwilioReq, reply: FastifyReply) {
+export async function ivrRegisterPinConfirm(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
   const callSid = getCallSid(req.body);
-  const state = getState(callSid);
+  const state = await getState(callSid);
   const digitsRaw = getDigits(req.body);
 
   if (!state || state.step !== "register_pin_confirm") {
@@ -142,30 +141,30 @@ export function ivrRegisterPinConfirm(req: TwilioReq, reply: FastifyReply) {
     return sendXml(reply, vr);
   }
 
-  if (!isDigits(digitsRaw) || digitsRaw.length !== 4) {
+  if (!isDigits(digitsRaw) || digitsRaw.length !== 3) {
     vr.say("That confirmation PIN is not valid.");
-    clearState(callSid);
+    await clearState(callSid);
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
     return sendXml(reply, vr);
   }
 
   if (digitsRaw !== state.pin) {
     vr.say("Those P I N numbers did not match. Please try again.");
-    clearState(callSid);
+    await clearState(callSid);
     vr.pause({ length: 1 });
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/register"));
     return sendXml(reply, vr);
   }
 
   const caller = getCaller(req.body);
-  const acct = createAccount({
+  const acct = await createAccount({
     caller,
     memberId: state.memberId,
     pin: state.pin,
   });
 
-  // Auto-auth so they can continue without re-entering PIN right after signup
-  setAuthed(callSid, caller);
+  // Auto-auth after signup
+  await setAuthed(callSid, caller);
 
   vr.say("Your account is created.");
   vr.pause({ length: 1 });
@@ -174,8 +173,7 @@ export function ivrRegisterPinConfirm(req: TwilioReq, reply: FastifyReply) {
   vr.say("Your confirmation code is.");
   sayDigitsSlow(vr, acct.confirmationCode);
 
-  // Store code in state so we can repeat it
-  setState(callSid, {
+  await setState(callSid, {
     step: "register_code_menu",
     confirmationCode: acct.confirmationCode,
   });
@@ -195,12 +193,12 @@ export function ivrRegisterPinConfirm(req: TwilioReq, reply: FastifyReply) {
   return sendXml(reply, vr);
 }
 
-export function ivrRegisterCodeMenu(req: TwilioReq, reply: FastifyReply) {
+export async function ivrRegisterCodeMenu(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
   const callSid = getCallSid(req.body);
-  const state = getState(callSid);
+  const state = await getState(callSid);
 
   if (!state || state.step !== "register_code_menu") {
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
@@ -220,18 +218,18 @@ export function ivrRegisterCodeMenu(req: TwilioReq, reply: FastifyReply) {
   return sendXml(reply, vr);
 }
 
-export function ivrRegisterCodeInput(req: TwilioReq, reply: FastifyReply) {
+export async function ivrRegisterCodeInput(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
   const callSid = getCallSid(req.body);
   const digitsRaw = getDigits(req.body);
   const digits = isDigits(digitsRaw) ? digitsRaw : "";
-  const state = getState(callSid);
+  const state = await getState(callSid);
 
   if (!state || state.step !== "register_code_menu") {
     vr.say("Session expired.");
-    clearState(callSid);
+    await clearState(callSid);
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
     return sendXml(reply, vr);
   }
@@ -244,8 +242,7 @@ export function ivrRegisterCodeInput(req: TwilioReq, reply: FastifyReply) {
     return sendXml(reply, vr);
   }
 
-  // 9 or anything else goes to main menu
-  clearState(callSid);
+  await clearState(callSid);
   vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
   return sendXml(reply, vr);
 }

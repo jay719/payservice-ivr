@@ -1,4 +1,3 @@
-// apps/api/src/ivr/auth.ts
 import twilio from "twilio";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import {
@@ -6,7 +5,8 @@ import {
   getDigits,
   getCaller,
   isDigits,
-  urlJoin,  type TwilioVoiceWebhookBody,
+  urlJoin,
+  type TwilioVoiceWebhookBody,
 } from "./utils";
 import { getAccount, verifyPin } from "./accounts";
 import { setAuthed } from "./authState";
@@ -24,7 +24,7 @@ function sendXml(reply: FastifyReply, vr: twilio.twiml.VoiceResponse) {
   return reply.type("text/xml").send(vr.toString());
 }
 
-export function ivrAuth(req: TwilioReq, reply: FastifyReply) {
+export async function ivrAuth(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
@@ -32,8 +32,7 @@ export function ivrAuth(req: TwilioReq, reply: FastifyReply) {
   const caller = getCaller(req.body);
   const digitsRaw = getDigits(req.body);
 
-  // User chose "new member" by pressing #.
-  // Depending on Twilio behavior, Digits can be "" or "#".
+  // New member if they press # or send empty
   if (typeof digitsRaw === "string") {
     const trimmed = digitsRaw.trim();
     if (trimmed.length === 0 || trimmed === "#") {
@@ -54,17 +53,17 @@ export function ivrAuth(req: TwilioReq, reply: FastifyReply) {
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
     return sendXml(reply, vr);
   }
-  // DEMO OVERRIDE PIN
-if (digitsRaw === "222") {
-  setAuthed(callSid, caller);
-  vr.say("Demo access granted.");
-  vr.pause({ length: 1 });
-  vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
-  return sendXml(reply, vr);
-}
 
+  // Demo override PIN
+  if (digitsRaw === "222") {
+    await setAuthed(callSid, caller);
+    vr.say("Demo access granted.");
+    vr.pause({ length: 1 });
+    vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
+    return sendXml(reply, vr);
+  }
 
-  const acct = getAccount(caller);
+  const acct = await getAccount(caller);
   if (!acct) {
     vr.say(
       "No account was found for this phone number. " +
@@ -75,14 +74,15 @@ if (digitsRaw === "222") {
     return sendXml(reply, vr);
   }
 
-  if (!verifyPin(caller, digitsRaw)) {
+  const ok = await verifyPin(caller, digitsRaw);
+  if (!ok) {
     vr.say("Invalid PIN. Please try again.");
     vr.pause({ length: 1 });
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
     return sendXml(reply, vr);
   }
 
-  setAuthed(callSid, caller);
+  await setAuthed(callSid, caller);
   vr.say("Access granted.");
   vr.pause({ length: 1 });
   vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));

@@ -1,4 +1,3 @@
-// apps/api/src/ivr/handlers.ts
 import twilio from "twilio";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { clearState, getState, setState } from "./state";
@@ -24,15 +23,16 @@ function sendXml(reply: FastifyReply, vr: twilio.twiml.VoiceResponse) {
   return reply.type("text/xml").send(vr.toString());
 }
 
-function requireAuthed(
+async function requireAuthed(
   req: TwilioReq,
   reply: FastifyReply,
   vr: twilio.twiml.VoiceResponse,
   baseUrl: string
-): boolean {
+): Promise<boolean> {
   const callSid = getCallSid(req.body);
-  if (!isAuthed(callSid)) {
-    vr.say("Please enter your PINfirst.");
+  const ok = await isAuthed(callSid);
+  if (!ok) {
+    vr.say("Please enter your PIN first.");
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
     sendXml(reply, vr);
     return false;
@@ -41,16 +41,15 @@ function requireAuthed(
 }
 
 // Menu (called after ivrAuth redirects here)
-export function ivrMenu(req: TwilioReq, reply: FastifyReply) {
+export async function ivrMenu(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
-  if (!requireAuthed(req, reply, vr, baseUrl)) return;
+  if (!(await requireAuthed(req, reply, vr, baseUrl))) return;
 
   const callSid = getCallSid(req.body);
   const digitsRaw = getDigits(req.body);
 
-  // If no digits, render the menu prompt + gather
   if (!isDigits(digitsRaw)) {
     const gather = vr.gather({
       numDigits: 1,
@@ -70,14 +69,13 @@ export function ivrMenu(req: TwilioReq, reply: FastifyReply) {
     return sendXml(reply, vr);
   }
 
-  // Handle menu input
   if (digitsRaw === "1") {
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/balance"));
     return sendXml(reply, vr);
   }
 
   if (digitsRaw === "2") {
-    setState(callSid, { step: "transfer_amount" });
+    await setState(callSid, { step: "transfer_amount" });
 
     const gather = vr.gather({
       numDigits: 4,
@@ -87,11 +85,11 @@ export function ivrMenu(req: TwilioReq, reply: FastifyReply) {
     });
 
     gather.say(
-      "Enter the amount in dollars. For example, for 25 dollars, enter 0025."
+      "Enter the amount in dollars using 4 digits. For example, for 25 dollars, enter 0025."
     );
 
     vr.say("No input received.");
-    vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
+    vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/transfer/amount"));
     return sendXml(reply, vr);
   }
 
@@ -105,49 +103,49 @@ export function ivrMenu(req: TwilioReq, reply: FastifyReply) {
   return sendXml(reply, vr);
 }
 
-export function ivrTransferAmount(req: TwilioReq, reply: FastifyReply) {
+export async function ivrTransferAmount(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
-  if (!requireAuthed(req, reply, vr, baseUrl)) return;
+  if (!(await requireAuthed(req, reply, vr, baseUrl))) return;
 
   const callSid = getCallSid(req.body);
   const digitsRaw = getDigits(req.body);
 
   if (!isDigits(digitsRaw) || digitsRaw.length !== 4) {
     vr.say("Invalid amount. Please try again.");
-    vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
+    vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/transfer/amount"));
     return sendXml(reply, vr);
   }
 
   const amountDollars = parseInt(digitsRaw, 10);
   const amountCents = Math.max(0, Math.trunc(amountDollars)) * 100;
 
-  setState(callSid, { step: "transfer_recipient", amountCents });
+  await setState(callSid, { step: "transfer_recipient", amountCents });
 
   const gather = vr.gather({
-    numDigits: 6,
+    numDigits: 8,
     action: urlJoin(baseUrl, "/twilio/transfer/recipient"),
     method: "POST",
     timeout: 12,
   });
 
-  gather.say("Enter the 6 digit recipient code.");
+  gather.say("Enter the 8 digit recipient code.");
 
   vr.say("No input received.");
-  vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
+  vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/transfer/recipient"));
   return sendXml(reply, vr);
 }
 
-export function ivrTransferRecipient(req: TwilioReq, reply: FastifyReply) {
+export async function ivrTransferRecipient(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
-  if (!requireAuthed(req, reply, vr, baseUrl)) return;
+  if (!(await requireAuthed(req, reply, vr, baseUrl))) return;
 
   const callSid = getCallSid(req.body);
   const digitsRaw = getDigits(req.body);
-  const state = getState(callSid);
+  const state = await getState(callSid);
 
   if (!state || state.step !== "transfer_recipient") {
     vr.say("Session expired. Returning to main menu.");
@@ -155,9 +153,9 @@ export function ivrTransferRecipient(req: TwilioReq, reply: FastifyReply) {
     return sendXml(reply, vr);
   }
 
-  if (!isDigits(digitsRaw) || digitsRaw.length !== 6) {
+  if (!isDigits(digitsRaw) || digitsRaw.length !== 8) {
     vr.say("Invalid recipient code. Please try again.");
-    vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
+    vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/transfer/recipient"));
     return sendXml(reply, vr);
   }
 
@@ -175,26 +173,26 @@ export function ivrTransferRecipient(req: TwilioReq, reply: FastifyReply) {
       "Press 1 to confirm. Press 2 to cancel."
   );
 
-  setState(callSid, {
+  await setState(callSid, {
     step: "transfer_confirm",
     amountCents: state.amountCents,
     recipientCode,
   });
 
   vr.say("No input received.");
-  vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
+  vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/transfer/confirm"));
   return sendXml(reply, vr);
 }
 
-export function ivrTransferConfirm(req: TwilioReq, reply: FastifyReply) {
+export async function ivrTransferConfirm(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
-  if (!requireAuthed(req, reply, vr, baseUrl)) return;
+  if (!(await requireAuthed(req, reply, vr, baseUrl))) return;
 
   const callSid = getCallSid(req.body);
   const digitsRaw = getDigits(req.body);
-  const state = getState(callSid);
+  const state = await getState(callSid);
 
   if (!state || state.step !== "transfer_confirm") {
     vr.say("Session expired. Returning to main menu.");
@@ -206,25 +204,24 @@ export function ivrTransferConfirm(req: TwilioReq, reply: FastifyReply) {
 
   if (digits === "1") {
     vr.say("Transfer submitted. Thank you.");
-    clearState(callSid);
+    await clearState(callSid);
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
     return sendXml(reply, vr);
   }
 
   vr.say("Canceled.");
   vr.pause({ length: 1 });
-  clearState(callSid);
+  await clearState(callSid);
   vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
   return sendXml(reply, vr);
 }
 
-export function ivrBalance(req: TwilioReq, reply: FastifyReply) {
+export async function ivrBalance(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
-  if (!requireAuthed(req, reply, vr, baseUrl)) return;
+  if (!(await requireAuthed(req, reply, vr, baseUrl))) return;
 
-  // MVP: fake balance (replace later)
   const balanceCents = 1275;
   const dollars = Math.floor(balanceCents / 100);
   const cents = String(balanceCents % 100).padStart(2, "0");
@@ -245,11 +242,11 @@ export function ivrBalance(req: TwilioReq, reply: FastifyReply) {
   return sendXml(reply, vr);
 }
 
-export function ivrBalanceInput(req: TwilioReq, reply: FastifyReply) {
+export async function ivrBalanceInput(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
-  if (!requireAuthed(req, reply, vr, baseUrl)) return;
+  if (!(await requireAuthed(req, reply, vr, baseUrl))) return;
 
   const digitsRaw = getDigits(req.body);
   const digits = isDigits(digitsRaw) ? digitsRaw : "";

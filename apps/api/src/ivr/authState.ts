@@ -1,17 +1,22 @@
-const authedCalls = new Map<string, { caller: string }>(); // key: CallSid
+// apps/api/src/ivr/authState.ts
+import { getState, setState } from "./state";
 
-export function setAuthed(callSid: string, caller: string) {
-  authedCalls.set(callSid, { caller });
+export async function setAuthed(callSid: string, caller: string) {
+  const existing = (await getState(callSid)) ?? {};
+  await setState(callSid, {
+    ...existing,
+    authed: true,
+    caller,
+  });
 }
 
-export function isAuthed(callSid: string): boolean {
-  return authedCalls.has(callSid);
+export async function isAuthed(callSid: string): Promise<boolean> {
+  const state = await getState(callSid);
+  return Boolean(state?.authed);
 }
 
-export function clearAuthed(callSid: string) {
-  authedCalls.delete(callSid);
-}
-
-export function getAuthedCaller(callSid: string): string | undefined {
-  return authedCalls.get(callSid)?.caller;
+export async function getAuthedCaller(callSid: string): Promise<string | null> {
+  const state = await getState(callSid);
+  const caller = state?.caller;
+  return typeof caller === "string" && caller.length > 0 ? caller : null;
 }

@@ -1,42 +1,60 @@
-# ---------- Build stage ----------
-FROM node:20-alpine AS builder
+# syntax=docker/dockerfile:1
 
+# ---------- deps stage (cache pnpm store) ----------
+FROM node:20-slim AS deps
 WORKDIR /app
 
-# Enable pnpm
-RUN corepack enable
+RUN apt-get update -y \
+  && apt-get install -y ca-certificates openssl \
+  && rm -rf /var/lib/apt/lists/*
 
-# Copy only what is needed for install first (better caching)
-COPY pnpm-lock.yaml package.json pnpm-workspace.yaml ./
-COPY apps/api/package.json ./apps/api/
+RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
 
-RUN pnpm install --frozen-lockfile
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json apps/api/package.json
 
-# Now copy source
-COPY . .
+# Fetch all packages into pnpm store (no node_modules yet)
+RUN pnpm fetch
 
-# Build the API
+# ---------- build stage ----------
+FROM node:20-slim AS build
+WORKDIR /app
+
+RUN apt-get update -y \
+  && apt-get install -y ca-certificates openssl \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
+
+# Bring pnpm store from deps stage
+COPY --from=deps /root/.local/share/pnpm/store /root/.local/share/pnpm/store
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json apps/api/package.json
+
+# Install (offline from store) so we can build
+RUN pnpm install --offline --frozen-lockfile
+
+# Copy source
+COPY apps/api apps/api
+
+# Build your API (tsc -> dist)
 RUN pnpm --filter @payservice/api build
 
-# ---------- Runtime stage ----------
-FROM node:20-alpine
+# Produce a portable prod bundle for just the API
+RUN pnpm --filter @payservice/api deploy --prod /out
 
-ENV NODE_ENV=production
-RUN corepack enable
-
+# ---------- runtime stage ----------
+FROM node:20-slim AS run
 WORKDIR /app
+ENV NODE_ENV=production
 
-# Copy the API package.json and lock/workspace files
-COPY pnpm-lock.yaml package.json pnpm-workspace.yaml ./
-COPY apps/api/package.json ./apps/api/package.json
+RUN apt-get update -y \
+  && apt-get install -y ca-certificates openssl \
+  && rm -rf /var/lib/apt/lists/*
 
-# Install ONLY the API's prod deps
-RUN pnpm --filter @payservice/api install --prod --frozen-lockfile
+# Copy the deployed (portable) API bundle
+COPY --from=build /out/ ./
 
-# Copy the built dist into the SAME package folder
-COPY --from=builder /app/apps/api/dist ./apps/api/dist
-
-# Run from inside the package so Node resolves ./node_modules correctly
-WORKDIR /app/apps/api
 EXPOSE 3001
 CMD ["node", "dist/index.js"]
