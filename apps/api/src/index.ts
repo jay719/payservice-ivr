@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import dotenv from "dotenv";
+import "dotenv/config";
 import formbody from "@fastify/formbody";
 
 import {
@@ -18,8 +18,6 @@ import {
   ivrBalance,
   ivrBalanceInput,
 } from "./ivr";
-
-dotenv.config();
 
 const app = Fastify({ logger: true });
 

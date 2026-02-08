@@ -1,8 +1,8 @@
 import twilio from "twilio";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { clearState, getState, setState } from "./state";
+import { clearFlow, getState, setState } from "./state";
 import { createAccount } from "./accounts";
-import { setAuthed } from "./authState";
+import { setAuthed } from "./state";
 import {
   getCallSid,
   getDigits,
@@ -11,6 +11,7 @@ import {
   urlJoin,
   type TwilioVoiceWebhookBody,
 } from "./utils";
+import { guardCallSid } from "./guardCallSid";
 
 const { VoiceResponse } = twilio.twiml;
 
@@ -34,6 +35,7 @@ export async function ivrRegisterStart(req: TwilioReq, reply: FastifyReply) {
   const baseUrl = getBaseUrl();
 
   const callSid = getCallSid(req.body);
+if (!guardCallSid(callSid, reply, baseUrl)) return;
   await setState(callSid, { step: "register_id" });
 
   const gather = vr.gather({
@@ -53,8 +55,8 @@ export async function ivrRegisterStart(req: TwilioReq, reply: FastifyReply) {
 export async function ivrRegisterId(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
-
   const callSid = getCallSid(req.body);
+  if (!guardCallSid(callSid, reply, baseUrl)) return;
   const state = await getState(callSid);
   const digitsRaw = getDigits(req.body);
 
@@ -92,6 +94,7 @@ export async function ivrRegisterPin(req: TwilioReq, reply: FastifyReply) {
   const baseUrl = getBaseUrl();
 
   const callSid = getCallSid(req.body);
+  if (!guardCallSid(callSid, reply, baseUrl)) return;
   const state = await getState(callSid);
   const digitsRaw = getDigits(req.body);
 
@@ -132,6 +135,7 @@ export async function ivrRegisterPinConfirm(req: TwilioReq, reply: FastifyReply)
   const baseUrl = getBaseUrl();
 
   const callSid = getCallSid(req.body);
+  if (!guardCallSid(callSid, reply, baseUrl)) return;
   const state = await getState(callSid);
   const digitsRaw = getDigits(req.body);
 
@@ -143,25 +147,38 @@ export async function ivrRegisterPinConfirm(req: TwilioReq, reply: FastifyReply)
 
   if (!isDigits(digitsRaw) || digitsRaw.length !== 3) {
     vr.say("That confirmation PIN is not valid.");
-    await clearState(callSid);
+    await clearFlow(callSid);
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
     return sendXml(reply, vr);
   }
 
-  if (digitsRaw !== state.pin) {
-    vr.say("Those P I N numbers did not match. Please try again.");
-    await clearState(callSid);
-    vr.pause({ length: 1 });
-    vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/register"));
-    return sendXml(reply, vr);
-  }
+ if (digitsRaw !== state.pin) {
+  vr.say("Those P I N numbers did not match. Please try again.");
+  await clearFlow(callSid);
+  vr.pause({ length: 1 });
+  vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/register"));
+  return sendXml(reply, vr);
+}
 
-  const caller = getCaller(req.body);
-  const acct = await createAccount({
-    caller,
-    memberId: state.memberId,
-    pin: state.pin,
-  });
+const caller = getCaller(req.body);
+
+// ✅ Guard state fields before createAccount
+const memberId = state.memberId;
+const pin = state.pin;
+
+if (!isDigits(memberId) || memberId.length !== 8 || !isDigits(pin) || pin.length !== 3) {
+  vr.say("Session expired. Please try registering again.");
+  await clearFlow(callSid);
+  vr.pause({ length: 1 });
+  vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/register"));
+  return sendXml(reply, vr);
+}
+
+const acct = await createAccount({
+  caller,
+  memberId,
+  pin,
+});
 
   // Auto-auth after signup
   await setAuthed(callSid, caller);
@@ -198,6 +215,7 @@ export async function ivrRegisterCodeMenu(req: TwilioReq, reply: FastifyReply) {
   const baseUrl = getBaseUrl();
 
   const callSid = getCallSid(req.body);
+  if (!guardCallSid(callSid, reply, baseUrl)) return;
   const state = await getState(callSid);
 
   if (!state || state.step !== "register_code_menu") {
@@ -223,26 +241,43 @@ export async function ivrRegisterCodeInput(req: TwilioReq, reply: FastifyReply) 
   const baseUrl = getBaseUrl();
 
   const callSid = getCallSid(req.body);
+  if (!guardCallSid(callSid, reply, baseUrl)) return;
   const digitsRaw = getDigits(req.body);
   const digits = isDigits(digitsRaw) ? digitsRaw : "";
   const state = await getState(callSid);
 
   if (!state || state.step !== "register_code_menu") {
     vr.say("Session expired.");
-    await clearState(callSid);
+    await clearFlow(callSid);
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
     return sendXml(reply, vr);
   }
 
   if (digits === "1") {
+    const code = state.confirmationCode;
+
+    if (!code) {
+      vr.say("Your confirmation code is not available right now.");
+      vr.pause({ length: 1 });
+      vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/register/code/menu"));
+      return sendXml(reply, vr);
+    }
+
     vr.say("Your confirmation code is.");
-    sayDigitsSlow(vr, state.confirmationCode);
+    sayDigitsSlow(vr, code);
     vr.pause({ length: 1 });
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/register/code/menu"));
     return sendXml(reply, vr);
   }
 
-  await clearState(callSid);
+  if (digits !== "9") {
+    vr.say("Invalid option.");
+    vr.pause({ length: 1 });
+    vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/register/code/menu"));
+    return sendXml(reply, vr);
+  }
+
+  await clearFlow(callSid);
   vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
   return sendXml(reply, vr);
 }

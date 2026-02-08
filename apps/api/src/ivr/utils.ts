@@ -14,9 +14,11 @@ export function isDigits(value: unknown): value is string {
   return typeof value === "string" && /^[0-9]+$/.test(value);
 }
 
-export function getCallSid(body: TwilioVoiceWebhookBody | undefined): string {
+export function getCallSid(
+  body: TwilioVoiceWebhookBody | undefined
+): string | null {
   const cs = body?.CallSid;
-  return typeof cs === "string" && cs.length > 0 ? cs : "unknown";
+  return typeof cs === "string" && cs.length > 0 ? cs : null;
 }
 
 export function getDigits(body: TwilioVoiceWebhookBody | undefined): unknown {

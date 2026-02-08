@@ -9,7 +9,8 @@ import {
   type TwilioVoiceWebhookBody,
 } from "./utils";
 import { getAccount, verifyPin } from "./accounts";
-import { setAuthed } from "./authState";
+import { setAuthed } from "./state";
+import { guardCallSid } from "./guardCallSid";
 
 const { VoiceResponse } = twilio.twiml;
 
@@ -29,6 +30,7 @@ export async function ivrAuth(req: TwilioReq, reply: FastifyReply) {
   const baseUrl = getBaseUrl();
 
   const callSid = getCallSid(req.body);
+  if (!guardCallSid(callSid, reply, baseUrl)) return;
   const caller = getCaller(req.body);
   const digitsRaw = getDigits(req.body);
 

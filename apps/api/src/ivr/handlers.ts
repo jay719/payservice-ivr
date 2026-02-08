@@ -1,6 +1,6 @@
 import twilio from "twilio";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { clearState, getState, setState } from "./state";
+import { clearFlow, getState, requireAuthed, setState } from "./state";
 import {
   getCallSid,
   getDigits,
@@ -8,7 +8,8 @@ import {
   urlJoin,
   type TwilioVoiceWebhookBody,
 } from "./utils";
-import { isAuthed } from "./authState";
+import { guardCallSid } from "./guardCallSid";
+
 
 const { VoiceResponse } = twilio.twiml;
 
@@ -23,21 +24,24 @@ function sendXml(reply: FastifyReply, vr: twilio.twiml.VoiceResponse) {
   return reply.type("text/xml").send(vr.toString());
 }
 
-async function requireAuthed(
+async function gateAuthed(
   req: TwilioReq,
   reply: FastifyReply,
   vr: twilio.twiml.VoiceResponse,
   baseUrl: string
-): Promise<boolean> {
+): Promise<{ callSid: string; state: any } | null> {
   const callSid = getCallSid(req.body);
-  const ok = await isAuthed(callSid);
-  if (!ok) {
+  if (!guardCallSid(callSid, reply, baseUrl)) return null;
+  const state = await getState(callSid);
+
+  if (!requireAuthed(state)) {
     vr.say("Please enter your PIN first.");
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/voice"));
     sendXml(reply, vr);
-    return false;
+    return null;
   }
-  return true;
+
+  return { callSid, state };
 }
 
 // Menu (called after ivrAuth redirects here)
@@ -45,9 +49,10 @@ export async function ivrMenu(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
-  if (!(await requireAuthed(req, reply, vr, baseUrl))) return;
+  const gated = await gateAuthed(req, reply, vr, baseUrl);
+  if (!gated) return;
 
-  const callSid = getCallSid(req.body);
+  const { callSid } = gated;
   const digitsRaw = getDigits(req.body);
 
   if (!isDigits(digitsRaw)) {
@@ -107,10 +112,18 @@ export async function ivrTransferAmount(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
-  if (!(await requireAuthed(req, reply, vr, baseUrl))) return;
+  const gated = await gateAuthed(req, reply, vr, baseUrl);
+  if (!gated) return;
 
-  const callSid = getCallSid(req.body);
+  const { callSid } = gated;
+  const state = await getState(callSid);
   const digitsRaw = getDigits(req.body);
+
+  if (!state || state.step !== "transfer_amount") {
+    vr.say("Session expired. Returning to main menu.");
+    vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
+    return sendXml(reply, vr);
+  }
 
   if (!isDigits(digitsRaw) || digitsRaw.length !== 4) {
     vr.say("Invalid amount. Please try again.");
@@ -141,9 +154,10 @@ export async function ivrTransferRecipient(req: TwilioReq, reply: FastifyReply) 
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
-  if (!(await requireAuthed(req, reply, vr, baseUrl))) return;
+  const gated = await gateAuthed(req, reply, vr, baseUrl);
+  if (!gated) return;
 
-  const callSid = getCallSid(req.body);
+  const { callSid } = gated;
   const digitsRaw = getDigits(req.body);
   const state = await getState(callSid);
 
@@ -161,6 +175,16 @@ export async function ivrTransferRecipient(req: TwilioReq, reply: FastifyReply) 
 
   const recipientCode = digitsRaw;
 
+  const amountCents = state.amountCents;
+  if (typeof amountCents !== "number") {
+    vr.say("Your transfer amount is not available. Returning to the main menu.");
+    await clearFlow(callSid);
+    vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
+    return sendXml(reply, vr);
+  }
+
+  const amountDollars = Math.floor(amountCents / 100);
+
   const gather = vr.gather({
     numDigits: 1,
     action: urlJoin(baseUrl, "/twilio/transfer/confirm"),
@@ -169,13 +193,13 @@ export async function ivrTransferRecipient(req: TwilioReq, reply: FastifyReply) 
   });
 
   gather.say(
-    `You are sending ${Math.floor(state.amountCents / 100)} dollars to recipient ${recipientCode}. ` +
+    `You are sending ${amountDollars} dollars to recipient ${recipientCode}. ` +
       "Press 1 to confirm. Press 2 to cancel."
   );
 
   await setState(callSid, {
     step: "transfer_confirm",
-    amountCents: state.amountCents,
+    amountCents,
     recipientCode,
   });
 
@@ -188,9 +212,10 @@ export async function ivrTransferConfirm(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
-  if (!(await requireAuthed(req, reply, vr, baseUrl))) return;
+  const gated = await gateAuthed(req, reply, vr, baseUrl);
+  if (!gated) return;
 
-  const callSid = getCallSid(req.body);
+  const { callSid } = gated;
   const digitsRaw = getDigits(req.body);
   const state = await getState(callSid);
 
@@ -204,15 +229,22 @@ export async function ivrTransferConfirm(req: TwilioReq, reply: FastifyReply) {
 
   if (digits === "1") {
     vr.say("Transfer submitted. Thank you.");
-    await clearState(callSid);
+    await clearFlow(callSid);
     vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
     return sendXml(reply, vr);
   }
 
-  vr.say("Canceled.");
+  if (digits === "2") {
+    vr.say("Canceled.");
+    vr.pause({ length: 1 });
+    await clearFlow(callSid);
+    vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
+    return sendXml(reply, vr);
+  }
+
+  vr.say("Invalid choice.");
   vr.pause({ length: 1 });
-  await clearState(callSid);
-  vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/menu"));
+  vr.redirect({ method: "POST" }, urlJoin(baseUrl, "/twilio/transfer/confirm"));
   return sendXml(reply, vr);
 }
 
@@ -220,7 +252,8 @@ export async function ivrBalance(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
-  if (!(await requireAuthed(req, reply, vr, baseUrl))) return;
+  const gated = await gateAuthed(req, reply, vr, baseUrl);
+  if (!gated) return;
 
   const balanceCents = 1275;
   const dollars = Math.floor(balanceCents / 100);
@@ -246,7 +279,8 @@ export async function ivrBalanceInput(req: TwilioReq, reply: FastifyReply) {
   const vr = new VoiceResponse();
   const baseUrl = getBaseUrl();
 
-  if (!(await requireAuthed(req, reply, vr, baseUrl))) return;
+  const gated = await gateAuthed(req, reply, vr, baseUrl);
+  if (!gated) return;
 
   const digitsRaw = getDigits(req.body);
   const digits = isDigits(digitsRaw) ? digitsRaw : "";
